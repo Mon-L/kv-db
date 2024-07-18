@@ -2,6 +2,7 @@ package wal
 
 import (
 	"github.com/stretchr/testify/assert"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -111,6 +112,40 @@ func TestWal_Read(t *testing.T) {
 		assert.Nil(t, err)
 		assert.Equal(t, data, val)
 	}
+}
+
+func TestWal_NewIterator(t *testing.T) {
+	wal, err := Open(Options{
+		Dir:         os.TempDir(),
+		SegmentSize: blockSize,
+	})
+	assert.Nil(t, err)
+	defer func() {
+		_ = wal.Delete()
+	}()
+
+	data := []byte("foo")
+	loopTime := blockSize
+
+	// write
+	for i := 0; i < loopTime; i++ {
+		chunk, err := wal.Write(data)
+		assert.Nil(t, err)
+		assert.NotNil(t, chunk)
+	}
+
+	// read
+	readTime := 0
+	iter := wal.NewIterator()
+	for {
+		ret, err := iter.Next()
+		if err == io.EOF {
+			break
+		}
+		readTime += 1
+		assert.Equal(t, data, ret)
+	}
+	assert.Equal(t, loopTime, readTime)
 }
 
 func TestWal_ReadButFailed(t *testing.T) {

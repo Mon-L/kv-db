@@ -74,8 +74,6 @@ func openSegment(dirPath string, id uint32) (*segment, error) {
 		return nil, err
 	}
 
-	println(file.Name())
-
 	return &segment{
 		id:                id,
 		fd:                file,
@@ -194,8 +192,13 @@ func (seg *segment) Sync() error {
 }
 
 func (seg *segment) Read(blockIndex uint32, offset uint32) ([]byte, error) {
+	data, _, err := seg.doRead(blockIndex, offset)
+	return data, err
+}
+
+func (seg *segment) doRead(blockIndex uint32, offset uint32) ([]byte, *Chunk, error) {
 	if seg.closed {
-		return nil, segmentIsClosedErr
+		return nil, nil, segmentIsClosedErr
 	}
 
 	block := getBuffer()
@@ -205,6 +208,9 @@ func (seg *segment) Read(blockIndex uint32, offset uint32) ([]byte, error) {
 	defer putBuffer(block)
 
 	var data []byte
+	nextChunk := &Chunk{
+		segmentId: seg.id,
+	}
 
 	for {
 		size := int64(blockSize)
@@ -216,12 +222,12 @@ func (seg *segment) Read(blockIndex uint32, offset uint32) ([]byte, error) {
 			size = segSize - blockOffset
 		}
 
-		if (int64)(offset) > size {
-			return nil, io.EOF
+		if (int64)(offset) >= size {
+			return nil, nil, io.EOF
 		}
 
 		if _, err := seg.fd.ReadAt(block[0:size], blockOffset); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		header := block[offset : offset+chunkHeaderSize]
@@ -234,18 +240,24 @@ func (seg *segment) Read(blockIndex uint32, offset uint32) ([]byte, error) {
 		dataEnd := dataStart + int64(length)
 		checksum := crc32.ChecksumIEEE(block[offset+4 : dataEnd])
 		if checksum != savedChecksum {
-			return nil, invalidCRC
+			return nil, nil, invalidCRC
 		}
 
 		data = append(data, block[dataStart:dataEnd]...)
 		if chunkType == chunkTypeFull || chunkType == chunkTypeEnd {
+			nextChunk.blockIndex = blockIndex
+			nextChunk.blockOffset = uint32(dataEnd)
+			if dataEnd+chunkHeaderSize >= blockSize {
+				nextChunk.blockIndex += 1
+				nextChunk.blockOffset = 0
+			}
 			break
 		}
 		blockIndex++
 		offset = 0
 	}
 
-	return data, nil
+	return data, nextChunk, nil
 }
 
 func (seg *segment) calMaxRequiredCapacity(dataSize int) int {

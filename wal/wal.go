@@ -3,6 +3,7 @@ package wal
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"sync"
@@ -13,6 +14,36 @@ type Wal struct {
 	activeSegment    *segment
 	readOnlySegments map[int]*segment
 	mu               sync.RWMutex
+}
+
+type Iterator struct {
+	segments        []*segment
+	segmentIdx      int
+	nextBlockIdx    uint32
+	nextBlockOffset uint32
+}
+
+func (iter *Iterator) Next() ([]byte, error) {
+	if iter.segmentIdx >= len(iter.segments) {
+		return nil, io.EOF
+	}
+
+	segment := iter.segments[iter.segmentIdx]
+	data, next, err := segment.doRead(iter.nextBlockIdx, iter.nextBlockOffset)
+	if err != nil {
+		if err == io.EOF {
+			iter.segmentIdx++
+			iter.nextBlockIdx = 0
+			iter.nextBlockOffset = 0
+			return iter.Next()
+		}
+		return nil, err
+	} else {
+		iter.nextBlockIdx = next.blockIndex
+		iter.nextBlockOffset = next.blockOffset
+	}
+
+	return data, err
 }
 
 func Open(options Options) (*Wal, error) {
@@ -71,6 +102,28 @@ func initSegments(wal *Wal) error {
 			}
 		}
 		return nil
+	}
+}
+
+func (wal *Wal) NewIterator() *Iterator {
+	wal.mu.RLock()
+	defer wal.mu.RUnlock()
+
+	var segments []*segment
+	segments = append(segments, wal.activeSegment)
+	for _, s := range wal.readOnlySegments {
+		segments = append(segments, s)
+	}
+
+	sort.Slice(segments, func(i, j int) bool {
+		return segments[i].id < segments[j].id
+	})
+
+	return &Iterator{
+		segments:        segments,
+		segmentIdx:      0,
+		nextBlockIdx:    0,
+		nextBlockOffset: 0,
 	}
 }
 
