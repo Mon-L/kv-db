@@ -11,9 +11,7 @@ import (
 func TestWal_Write(t *testing.T) {
 	wal, err := Open(*DefaultOptions)
 	assert.Nil(t, err)
-	defer func() {
-		_ = wal.Delete()
-	}()
+	defer removeWal(wal)
 
 	data := []byte(strings.Repeat("x", 10))
 	chunk, err := wal.Write(data)
@@ -32,20 +30,18 @@ func TestWal_WriteLarge(t *testing.T) {
 		SegmentSize: blockSize * 10,
 	})
 	assert.Nil(t, err)
-	defer func() {
-		_ = wal.Delete()
-	}()
+	defer removeWal(wal)
 
 	data := []byte(strings.Repeat("x", blockSize*1))
 	chunk, err := wal.Write(data)
 	assert.Nil(t, err)
-	assert.Equal(t, uint32(0), chunk.blockIndex)
-	assert.Equal(t, uint32(0), chunk.blockOffset)
+	assert.Equal(t, uint32(0), chunk.BlockIndex)
+	assert.Equal(t, uint32(0), chunk.BlockOffset)
 
 	chunk2, err2 := wal.Write(data)
 	assert.Nil(t, err2)
-	assert.Equal(t, uint32(1), chunk2.blockIndex)
-	assert.Equal(t, uint32(14), chunk2.blockOffset)
+	assert.Equal(t, uint32(1), chunk2.BlockIndex)
+	assert.Equal(t, uint32(14), chunk2.BlockOffset)
 }
 
 func TestWal_WriteTooLarge(t *testing.T) {
@@ -54,9 +50,7 @@ func TestWal_WriteTooLarge(t *testing.T) {
 		SegmentSize: blockSize * 10,
 	})
 	assert.Nil(t, err)
-	defer func() {
-		_ = wal.Delete()
-	}()
+	defer removeWal(wal)
 
 	data := []byte(strings.Repeat("x", blockSize*10-chunkHeaderSize))
 	chunk, err := wal.Write(data)
@@ -70,18 +64,16 @@ func TestWal_WriteAndSwitchSegment(t *testing.T) {
 		SegmentSize: blockSize * 5,
 	})
 	assert.Nil(t, err)
-	defer func() {
-		_ = wal.Delete()
-	}()
+	defer removeWal(wal)
 
 	data := []byte(strings.Repeat("x", blockSize-chunkHeaderSize))
 	chunk, err := wal.Write(data)
 	assert.Nil(t, err)
-	assert.Equal(t, uint32(0), chunk.blockIndex)
+	assert.Equal(t, uint32(0), chunk.BlockIndex)
 
 	chunk2, err2 := wal.Write(data)
 	assert.Nil(t, err2)
-	assert.Equal(t, uint32(1), chunk2.blockIndex)
+	assert.Equal(t, uint32(1), chunk2.BlockIndex)
 }
 
 func TestWal_Read(t *testing.T) {
@@ -90,9 +82,7 @@ func TestWal_Read(t *testing.T) {
 		SegmentSize: blockSize * 15,
 	})
 	assert.Nil(t, err)
-	defer func() {
-		_ = wal.Delete()
-	}()
+	defer removeWal(wal)
 
 	data := []byte("foo")
 	loopTime := blockSize
@@ -120,9 +110,7 @@ func TestWal_NewIterator(t *testing.T) {
 		SegmentSize: blockSize,
 	})
 	assert.Nil(t, err)
-	defer func() {
-		_ = wal.Delete()
-	}()
+	defer removeWal(wal)
 
 	data := []byte("foo")
 	loopTime := blockSize
@@ -138,7 +126,7 @@ func TestWal_NewIterator(t *testing.T) {
 	readTime := 0
 	iter := wal.NewIterator()
 	for {
-		ret, err := iter.Next()
+		ret, _, err := iter.Next()
 		if err == io.EOF {
 			break
 		}
@@ -154,12 +142,10 @@ func TestWal_ReadButFailed(t *testing.T) {
 		SegmentSize: blockSize * 15,
 	})
 	assert.Nil(t, err)
-	defer func() {
-		_ = wal.Delete()
-	}()
+	defer removeWal(wal)
 
 	data, err := wal.Read(&Chunk{
-		segmentId: 10,
+		SegmentId: 10,
 	})
 	assert.Nil(t, data)
 	assert.NotNil(t, err)
@@ -171,9 +157,7 @@ func TestWal_Close(t *testing.T) {
 		SegmentSize: blockSize * 15,
 	})
 	assert.Nil(t, err)
-	defer func() {
-		_ = wal.Delete()
-	}()
+	defer removeWal(wal)
 
 	// write
 	_, err = wal.Write([]byte("abc"))
@@ -213,10 +197,13 @@ func TestWal_Delete(t *testing.T) {
 		Dir:         tempDir,
 		SegmentSize: blockSize * 15,
 	})
-	defer func() {
-		_ = wal.Delete()
-	}()
 	assert.Nil(t, err)
+	defer removeWal(wal)
 	// empty
 	assert.Equal(t, int64(0), wal.activeSegment.Size())
+}
+
+func removeWal(wal *Wal) {
+	_ = wal.Close()
+	_ = os.RemoveAll(wal.options.Dir)
 }

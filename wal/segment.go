@@ -42,10 +42,10 @@ type segment struct {
 }
 
 type Chunk struct {
-	segmentId   uint32
-	blockIndex  uint32
-	blockOffset uint32
-	size        uint32
+	SegmentId   uint32
+	BlockIndex  uint32
+	BlockOffset uint32
+	Size        uint32
 }
 
 var blockPool = sync.Pool{
@@ -62,8 +62,8 @@ func putBuffer(buf []byte) {
 	blockPool.Put(buf)
 }
 
-func openSegment(dirPath string, id uint32) (*segment, error) {
-	path := filepath.Join(dirPath, fmt.Sprintf("%09d"+SegmentSuffix, id))
+func openSegment(dirPath string, fileSuffix string, id uint32) (*segment, error) {
+	path := JoinSegmentPath(dirPath, fileSuffix, id)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_RDWR, fileModePerm)
 	if err != nil {
 		return nil, err
@@ -82,6 +82,10 @@ func openSegment(dirPath string, id uint32) (*segment, error) {
 		closed:            false,
 		headerCache:       make([]byte, chunkHeaderSize),
 	}, nil
+}
+
+func JoinSegmentPath(dir string, fileSuffix string, id uint32) string {
+	return filepath.Join(dir, fmt.Sprintf("%09d"+fileSuffix, id))
 }
 
 func (seg *segment) Write(data []byte) (*Chunk, error) {
@@ -125,16 +129,16 @@ func (seg *segment) writeToBuffer(data []byte, buffer *bytebufferpool.ByteBuffer
 	}
 
 	chunk := &Chunk{
-		segmentId:   seg.id,
-		blockIndex:  seg.activeBlockIndex,
-		blockOffset: seg.activeBlockOffset,
+		SegmentId:   seg.id,
+		BlockIndex:  seg.activeBlockIndex,
+		BlockOffset: seg.activeBlockOffset,
 	}
 
 	dataSize := uint32(len(data))
 	if seg.activeBlockOffset+dataSize+chunkHeaderSize <= blockSize {
 		// 当前 block 能放下整个 chunk
 		seg.fillBuffer(buffer, data, chunkTypeFull)
-		chunk.size = dataSize + chunkHeaderSize
+		chunk.Size = dataSize + chunkHeaderSize
 	} else {
 		// 当前 block 不能放下整个 chunk，使用多个 block 存储
 		var chunkCount uint32 = 0
@@ -165,10 +169,10 @@ func (seg *segment) writeToBuffer(data []byte, buffer *bytebufferpool.ByteBuffer
 			offset = (offset + free) % blockSize
 			remaining = int(dataSize) - start
 		}
-		chunk.size = chunkCount*chunkHeaderSize + dataSize
+		chunk.Size = chunkCount*chunkHeaderSize + dataSize
 	}
 
-	seg.activeBlockOffset += chunk.size
+	seg.activeBlockOffset += chunk.Size
 	if seg.activeBlockOffset >= blockSize {
 		// 切换 block
 		seg.activeBlockIndex += seg.activeBlockOffset / blockSize
@@ -209,7 +213,7 @@ func (seg *segment) doRead(blockIndex uint32, offset uint32) ([]byte, *Chunk, er
 
 	var data []byte
 	nextChunk := &Chunk{
-		segmentId: seg.id,
+		SegmentId: seg.id,
 	}
 
 	for {
@@ -245,11 +249,11 @@ func (seg *segment) doRead(blockIndex uint32, offset uint32) ([]byte, *Chunk, er
 
 		data = append(data, block[dataStart:dataEnd]...)
 		if chunkType == chunkTypeFull || chunkType == chunkTypeEnd {
-			nextChunk.blockIndex = blockIndex
-			nextChunk.blockOffset = uint32(dataEnd)
+			nextChunk.BlockIndex = blockIndex
+			nextChunk.BlockOffset = uint32(dataEnd)
 			if dataEnd+chunkHeaderSize >= blockSize {
-				nextChunk.blockIndex += 1
-				nextChunk.blockOffset = 0
+				nextChunk.BlockIndex += 1
+				nextChunk.BlockOffset = 0
 			}
 			break
 		}

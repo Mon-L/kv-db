@@ -10,7 +10,7 @@ import (
 )
 
 func TestSegment_Write(t *testing.T) {
-	segment, nil := openSegment(os.TempDir(), 1)
+	segment, nil := openSegment(os.TempDir(), SegmentSuffix, 1)
 	assert.Nil(t, nil)
 	defer func() {
 		_ = segment.Remove()
@@ -20,13 +20,13 @@ func TestSegment_Write(t *testing.T) {
 	chunk, err := segment.Write(val)
 	assert.Nil(t, err)
 
-	ret1, err1 := segment.Read(chunk.blockIndex, chunk.blockOffset)
+	ret1, err1 := segment.Read(chunk.BlockIndex, chunk.BlockOffset)
 	assert.Nil(t, err1)
 	assert.EqualValues(t, val, ret1)
 }
 
 func TestSegment_WriteFull(t *testing.T) {
-	segment, nil := openSegment(os.TempDir(), 0)
+	segment, nil := openSegment(os.TempDir(), SegmentSuffix, 0)
 	assert.Nil(t, nil)
 	defer func() {
 		_ = segment.Remove()
@@ -36,8 +36,8 @@ func TestSegment_WriteFull(t *testing.T) {
 	val := []byte(strings.Repeat("a", blockSize-chunkHeaderSize))
 	chunk, err := segment.Write(val)
 	assert.Nil(t, err)
-	assert.Equal(t, uint32(0), chunk.blockIndex)
-	assert.Equal(t, uint32(0), chunk.blockOffset)
+	assert.Equal(t, uint32(0), chunk.BlockIndex)
+	assert.Equal(t, uint32(0), chunk.BlockOffset)
 
 	// should switch new block
 	assert.Equal(t, uint32(1), segment.activeBlockIndex)
@@ -45,7 +45,7 @@ func TestSegment_WriteFull(t *testing.T) {
 }
 
 func TestSegment_WritePadding(t *testing.T) {
-	segment, nil := openSegment(os.TempDir(), 0)
+	segment, nil := openSegment(os.TempDir(), SegmentSuffix, 0)
 	assert.Nil(t, nil)
 	defer func() {
 		_ = segment.Remove()
@@ -53,16 +53,16 @@ func TestSegment_WritePadding(t *testing.T) {
 
 	val := []byte(strings.Repeat("a", blockSize-chunkHeaderSize-5))
 	chunk, err := segment.Write(val)
-	assert.Equal(t, uint32(0), chunk.blockIndex)
+	assert.Equal(t, uint32(0), chunk.BlockIndex)
 	assert.Nil(t, err)
 
 	chunk2, err2 := segment.Write([]byte("a"))
-	assert.Equal(t, uint32(1), chunk2.blockIndex)
+	assert.Equal(t, uint32(1), chunk2.BlockIndex)
 	assert.Nil(t, err2)
 }
 
 func TestSegment_WriteCrossBlock(t *testing.T) {
-	segment, nil := openSegment(os.TempDir(), 0)
+	segment, nil := openSegment(os.TempDir(), SegmentSuffix, 0)
 	assert.Nil(t, nil)
 	defer func() {
 		_ = segment.Remove()
@@ -75,15 +75,15 @@ func TestSegment_WriteCrossBlock(t *testing.T) {
 	val2 := []byte("abc")
 	chunk2, err2 := segment.Write(val2)
 	assert.Nil(t, err2)
-	assert.Equal(t, uint32(0), chunk2.blockIndex)
+	assert.Equal(t, uint32(0), chunk2.BlockIndex)
 
-	ret2, err2 := segment.Read(chunk2.blockIndex, chunk2.blockOffset)
+	ret2, err2 := segment.Read(chunk2.BlockIndex, chunk2.BlockOffset)
 	assert.Nil(t, err2)
 	assert.EqualValues(t, val2, ret2)
 }
 
 func TestSegment_WriteCrossBlock2(t *testing.T) {
-	segment, nil := openSegment(os.TempDir(), 0)
+	segment, nil := openSegment(os.TempDir(), SegmentSuffix, 0)
 	assert.Nil(t, nil)
 	defer func() {
 		_ = segment.Remove()
@@ -97,10 +97,10 @@ func TestSegment_WriteCrossBlock2(t *testing.T) {
 	chunk2, err2 := segment.Write(val2)
 
 	assert.Nil(t, err2)
-	assert.Equal(t, uint32(0), chunk2.blockIndex)
+	assert.Equal(t, uint32(0), chunk2.BlockIndex)
 	assert.EqualValues(t, uint32(3), segment.activeBlockIndex)
 
-	ret2, err2 := segment.Read(chunk2.blockIndex, chunk2.blockOffset)
+	ret2, err2 := segment.Read(chunk2.BlockIndex, chunk2.BlockOffset)
 	assert.Nil(t, err2)
 	assert.EqualValues(t, val2, ret2)
 }
