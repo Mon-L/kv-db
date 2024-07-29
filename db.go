@@ -14,10 +14,12 @@ import (
 var (
 	ErrEmptyKey    = errors.New("key can not be empty")
 	ErrKeyNotFound = errors.New("key not found")
+	ErrDBClosed    = errors.New("db is closed")
 )
 
 type DB struct {
 	options         Options
+	closed          bool
 	mu              sync.RWMutex
 	batchPool       sync.Pool
 	indexer         index.Indexer
@@ -81,6 +83,7 @@ func (db *DB) Close() error {
 		db.walMergeTask.Stop()
 	}
 
+	db.closed = true
 	return nil
 }
 
@@ -93,6 +96,10 @@ func (db *DB) openWalFiles() (*wal.Wal, error) {
 }
 
 func (db *DB) loadIndex() error {
+	if db.closed {
+		return ErrDBClosed
+	}
+
 	if err := db.loadIndexFromHint(); err != nil {
 		return err
 	}
@@ -162,6 +169,10 @@ func (db *DB) Put(key []byte, value []byte) error {
 }
 
 func (db *DB) PutWithTTL(key []byte, value []byte, ttl time.Duration) error {
+	if db.closed {
+		return ErrDBClosed
+	}
+
 	if len(key) == 0 {
 		return ErrEmptyKey
 	}
@@ -186,6 +197,10 @@ func (db *DB) PutWithTTL(key []byte, value []byte, ttl time.Duration) error {
 }
 
 func (db *DB) Get(key []byte) ([]byte, error) {
+	if db.closed {
+		return nil, ErrDBClosed
+	}
+
 	if len(key) == 0 {
 		return nil, ErrEmptyKey
 	}
@@ -217,6 +232,10 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 }
 
 func (db *DB) Delete(key []byte) error {
+	if db.closed {
+		return ErrDBClosed
+	}
+
 	if len(key) == 0 {
 		return ErrEmptyKey
 	}
